@@ -399,7 +399,7 @@ bool WorldSession::Update(PacketFilter& updater)
 
                     m_Socket = m_requestSocket;
                     m_requestSocket = nullptr;
-                    sLog.outString("New Session key %s", m_Socket->GetSessionKey().AsHexStr());
+                    sLog.outDetail("New Session key %s", m_Socket->GetSessionKey().AsHexStr());
                     SendAuthOk();
                 }
                 else
@@ -502,7 +502,7 @@ void WorldSession::LogoutPlayer(bool Save)
             _player->RepopAtGraveyard();
         }
         else if (_player->isInCombat())
-            _player->CombatStop(true, true);
+            _player->CombatStopWithPets(true, true);
 
         // drop a flag if player is carrying it
         if (BattleGround* bg = _player->GetBattleGround())

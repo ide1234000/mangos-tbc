@@ -38,6 +38,7 @@ class Player;
 class WorldSession;
 
 struct GameEventCreatureData;
+enum class VisibilityDistanceType : uint32;
 
 enum CreatureExtraFlags
 {
@@ -154,6 +155,7 @@ struct CreatureInfo
     uint32  VendorTemplateId;
     uint32  EquipmentTemplateId;
     uint32  GossipMenuId;
+    VisibilityDistanceType visibilityDistanceType;
     char const* AIName;
     uint32  ScriptID;
 
@@ -187,10 +189,18 @@ struct CreatureTemplateSpells
     uint32 spells[CREATURE_MAX_SPELLS];
 };
 
+struct CreatureCooldowns
+{
+    uint32 entry;
+    uint32 spellId;
+    uint32 cooldownMin;
+    uint32 cooldownMax;
+};
+
 struct EquipmentInfo
 {
-    uint32  entry;
-    uint32  equipentry[3];
+    uint32 entry;
+    uint32 equipentry[3];
 };
 
 // depricated old way
@@ -682,7 +692,7 @@ class Creature : public Unit
         bool HasSpell(uint32 spellID) const override;
 
         bool UpdateEntry(uint32 Entry, const CreatureData* data = nullptr, GameEventCreatureData const* eventData = nullptr, bool preserveHPAndPower = true);
-        void ResetEntry();
+        void ResetEntry(bool respawn = false);
 
         void ApplyGameEventSpells(GameEventCreatureData const* eventData, bool activated);
         bool UpdateStats(Stats stat) override;
@@ -790,7 +800,7 @@ class Creature : public Unit
 
         void SendZoneUnderAttackMessage(Player* attacker) const;
 
-        void SetInCombatWithZone();
+        void SetInCombatWithZone(bool checkAttackability = false);
 
         Unit* SelectAttackingTarget(AttackingTarget target, uint32 position, uint32 spellId, uint32 selectFlags = 0, SelectAttackingTargetParams params = SelectAttackingTargetParams()) const;
         Unit* SelectAttackingTarget(AttackingTarget target, uint32 position, SpellEntry const* spellInfo = nullptr, uint32 selectFlags = 0, SelectAttackingTargetParams params = SelectAttackingTargetParams()) const;
@@ -851,6 +861,9 @@ class Creature : public Unit
 
         uint32 GetDetectionRange() const override { return m_creatureInfo->Detection; }
 
+        void SetBaseWalkSpeed(float speed) override;
+        void SetBaseRunSpeed(float speed) override;
+
         void LockOutSpells(SpellSchoolMask schoolMask, uint32 duration) override;
 
         bool CanAggro() const { return m_canAggro; }
@@ -893,7 +906,7 @@ class Creature : public Unit
         float m_respawnradius;
 
         CreatureSubtype m_subtype;                          // set in Creatures subclasses for fast it detect without dynamic_cast use
-        void RegeneratePower();
+        void RegeneratePower(float timerMultiplier);
         virtual void RegenerateHealth();
         MovementGeneratorType m_defaultMovementType;
         Cell m_currentCell;                                 // store current cell where creature listed
@@ -919,9 +932,6 @@ class Creature : public Unit
         bool m_noXP;
         bool m_noLoot;
         bool m_noReputation;
-
-        void SetBaseWalkSpeed(float speed) override;
-        void SetBaseRunSpeed(float speed) override;
 
         // Script logic
         bool m_ignoreRangedTargets;                         // Ignores ranged targets when picking someone to attack
