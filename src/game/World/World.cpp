@@ -76,7 +76,7 @@ INSTANTIATE_SINGLETON_1(World);
 
 extern void LoadGameObjectModelList();
 
-volatile bool World::m_stopEvent = false;
+std::atomic<bool> World::m_stopEvent { false };
 uint8 World::m_ExitCode = SHUTDOWN_EXIT_CODE;
 volatile uint32 World::m_worldLoopCounter = 0;
 
@@ -655,6 +655,7 @@ void World::LoadConfigSettings(bool reload)
 
     setConfig(CONFIG_FLOAT_THREAT_RADIUS, "ThreatRadius", 100.0f);
     setConfigMin(CONFIG_UINT32_CREATURE_RESPAWN_AGGRO_DELAY, "CreatureRespawnAggroDelay", 5000, 0);
+    setConfig(CONFIG_UINT32_CREATURE_PICKPOCKET_RESTOCK_DELAY, "CreaturePickpocketRestockDelay", 600);
 
     // always use declined names in the russian client
     if (getConfig(CONFIG_UINT32_REALM_ZONE) == REALM_ZONE_RUSSIAN)
@@ -812,7 +813,7 @@ void World::SetInitialWorldSettings()
     srand((unsigned int)time(nullptr));
 
     ///- Time server startup
-    uint32 uStartTime = WorldTimer::getMSTime();
+    uint32 startTime = WorldTimer::getMSTime();
 
     ///- Initialize detour memory management
     dtAllocSetCustom(dtCustomAlloc, dtCustomFree);
@@ -1333,6 +1334,10 @@ void World::SetInitialWorldSettings()
     sAuctionBot.Initialize();
     sLog.outString();
 
+    sLog.outString("Loading WorldState");
+    sWorldState.Load();
+    sLog.outString();
+
 #ifdef BUILD_PLAYERBOT
     PlayerbotMgr::SetInitialWorldSettings();
 #endif
@@ -1341,7 +1346,7 @@ void World::SetInitialWorldSettings()
     sLog.outString("---------------------------------------");
     sLog.outString();
 
-    uint32 uStartInterval = WorldTimer::getMSTimeDiff(uStartTime, WorldTimer::getMSTime());
+    uint32 uStartInterval = WorldTimer::getMSTimeDiff(startTime, WorldTimer::getMSTime());
     sLog.outString("SERVER STARTUP TIME: %i minutes %i seconds", uStartInterval / 60000, (uStartInterval % 60000) / 1000);
     sLog.outString();
 }
@@ -1880,7 +1885,7 @@ void World::ShutdownCancel()
     DEBUG_LOG("Server %s cancelled.", (m_ShutdownMask & SHUTDOWN_MASK_RESTART ? "restart" : "shutdown"));
 }
 
-void World::UpdateSessions(uint32 /*diff*/)
+void World::UpdateSessions(uint32 diff)
 {
     ///- Add new sessions
     {
@@ -1900,7 +1905,7 @@ void World::UpdateSessions(uint32 /*diff*/)
         WorldSessionFilter updater(pSession);
 
         // if WorldSession::Update fails, it means that the session should be destroyed
-        if (!pSession->Update(updater))
+        if (!pSession->Update(diff, updater))
         {
             RemoveQueuedSession(pSession);
             itr = m_sessions.erase(itr);
@@ -2188,6 +2193,7 @@ void World::ResetWeeklyQuests()
     CharacterDatabase.PExecute("UPDATE saved_variables SET NextWeeklyQuestResetTime = '" UI64FMTD "'", uint64(m_NextWeeklyQuestReset));
 
     GenerateEventGroupEvents(false, true, true); // generate weeklies and save to DB
+    sGameEventMgr.WeeklyEventTimerRecalculation();
 }
 
 void World::ResetMonthlyQuests()

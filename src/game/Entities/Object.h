@@ -325,6 +325,7 @@ struct WorldLocation
         : mapid(_mapid), coord_x(_x), coord_y(_y), coord_z(_z), orientation(_o) {}
     WorldLocation(WorldLocation const& loc)
         : mapid(loc.mapid), coord_x(loc.coord_x), coord_y(loc.coord_y), coord_z(loc.coord_z), orientation(loc.orientation) {}
+    WorldLocation(uint32 mapId, Position const& pos) : mapid(mapId), coord_x(pos.x), coord_y(pos.y), coord_z(pos.z), orientation(pos.o) {}
 };
 
 
@@ -648,6 +649,29 @@ class Object
 
 struct WorldObjectChangeAccumulator;
 
+struct TempSpawnSettings
+{
+    WorldObject* spawner = nullptr;
+    uint32 entry;
+    float x, y, z, ori;
+    TempSpawnType spawnType;
+    uint32 despawnTime;
+    uint32 corpseDespawnTime = 0;
+    bool activeObject = false;
+    bool setRun = false;
+    uint32 pathId = 0;
+    uint32 faction = 0;
+    uint32 modelId = 0;
+    bool spawnCounting = false;
+    bool forcedOnTop = false;
+    TempSpawnSettings() {}
+    TempSpawnSettings(WorldObject* spawner, uint32 entry, float x, float y, float z, float ori, TempSpawnType spawnType, uint32 despawnTime, bool activeObject = false, bool setRun = false, uint32 pathId = 0, uint32 faction = 0,
+        uint32 modelId = 0, bool spawnCounting = false, bool forcedOnTop = false) :
+        spawner(spawner), entry(entry), x(x), y(y), z(z), ori(ori), spawnType(spawnType), despawnTime(despawnTime), activeObject(activeObject), setRun(setRun), pathId(pathId), faction(faction), modelId(modelId), spawnCounting(spawnCounting),
+        forcedOnTop(forcedOnTop)
+    {}
+};
+
 class WorldObject : public Object
 {
         friend struct WorldObjectChangeAccumulator;
@@ -846,7 +870,8 @@ class WorldObject : public Object
         void AddToClientUpdateList() override;
         void RemoveFromClientUpdateList() override;
         void BuildUpdateData(UpdateDataMapType&) override;
-
+        
+        static Creature* SummonCreature(TempSpawnSettings settings, Map* map);
         Creature* SummonCreature(uint32 id, float x, float y, float z, float ang, TempSpawnType spwtype, uint32 despwtime, bool asActiveObject = false, bool setRun = false, uint32 pathId = 0, uint32 faction = 0, uint32 modelId = 0, bool spawnCounting = false, bool forcedOnTop = false);
 
         bool isActiveObject() const { return m_isActiveObject || m_viewPoint.hasViewers(); }

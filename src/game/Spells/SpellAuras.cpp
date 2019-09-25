@@ -1636,8 +1636,17 @@ void Aura::TriggerSpell()
 //                    case 40879: break;
 //                    // Aura of Desire
 //                    case 41350: break;
-//                    // Dementia
-//                    case 41404: break;
+                    case 41404:                             // Dementia
+                        switch (urand(0, 1))
+                        {
+                            case 0:
+                                trigger_spell_id = 41406;
+                                break;
+                            case 1:
+                                trigger_spell_id = 41409;
+                                break;
+                        }
+                        break;
 //                    // Chaos Form
 //                    case 41629: break;
                     case 42177:                             // Alert Drums
@@ -1916,6 +1925,22 @@ void Aura::TriggerSpell()
 
                 break;
             }
+            case 36716:                                     // Energy Discharge
+            case 38828:
+            {
+                if (urand(0, 1) == 0) // 50% chance to proc
+                    break;
+                return;
+            }
+            case 36720:                                     // Kael'Thas - Phoenix - Burn
+            case 44197:                                     // MgT Kael'Thas - Phoenix - Burn
+            {
+                uint32 dmg = target->GetMaxHealth() * 0.05f; // 5% dmg every tick
+                uint32 absorb = 0;
+                target->DealDamageMods(target, dmg, &absorb, SELF_DAMAGE);
+                target->DealDamage(target, dmg, nullptr, SELF_DAMAGE, SPELL_SCHOOL_MASK_FIRE, nullptr, false);
+                break; // continue executing rest
+            }
             case 37716:                                     // Demon Link
                 triggerTarget = static_cast<TemporarySpawn*>(target)->GetSpawner();
                 break;
@@ -2145,10 +2170,14 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                         break;
                     }
                     case 1515:                              // Tame beast
-                        // FIX_ME: this is 2.0.12 threat effect replaced in 2.1.x by dummy aura, must be checked for correctness
-                        if (target->CanHaveThreatList())
-                            if (Unit* caster = GetCaster())
-                                target->AddThreat(caster, 10.0f, false, GetSpellSchoolMask(GetSpellProto()), GetSpellProto());
+                        if (Unit * caster = GetCaster()) // Wotlk - sniff - adds 1000 threat
+                            target->AddThreat(caster, 1000.0f, false, GetSpellSchoolMask(GetSpellProto()), GetSpellProto());
+                        return;
+                    case 6946:                              // Curse of the Bleakheart
+                    case 41170:
+                        m_isPeriodic = true;
+                        m_modifier.periodictime = 5 * IN_MILLISECONDS;
+                        m_periodicTimer = m_modifier.periodictime;
                         return;
                     case 7057:                              // Haunting Spirits
                         // expected to tick with 30 sec period (tick part see in Aura::PeriodicTick)
@@ -2156,6 +2185,11 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                         m_modifier.periodictime = 30 * IN_MILLISECONDS;
                         m_periodicTimer = m_modifier.periodictime;
                         return;
+                    case 7054:                              // Forsaken Skill
+                        m_isPeriodic = true;
+                        m_modifier.periodictime = 1 * IN_MILLISECONDS;
+                        m_periodicTimer = m_modifier.periodictime;
+                        break;
                     case 10255:                             // Stoned
                     {
                         if (Unit* caster = GetCaster())
@@ -2761,12 +2795,7 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
             }
             case 44191:                                     // Flame Strike
             {
-                if (target->GetMap()->IsDungeon())
-                {
-                    uint32 spellId = target->GetMap()->IsRegularDifficulty() ? 44190 : 46163;
-
-                    target->CastSpell(target, spellId, TRIGGERED_OLD_TRIGGERED, nullptr, this);
-                }
+                target->CastSpell(nullptr, target->GetUInt32Value(UNIT_CREATED_BY_SPELL) == 44192 ? 44190 : 46163, TRIGGERED_OLD_TRIGGERED);
                 return;
             }
             case 45934:                                     // Dark Fiend
@@ -2871,6 +2900,14 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                     }
                     else
                         target->RemoveAurasDueToSpell(24662);
+                    return;
+                }
+                case 28819:                             // Submerge Visual
+                {
+                    if (apply)
+                        target->SetStandState(UNIT_STAND_STATE_CUSTOM);
+                    else
+                        target->SetStandState(UNIT_STAND_STATE_STAND);
                     return;
                 }
                 case 29266:                                 // Permanent Feign Death
@@ -3733,16 +3770,15 @@ void Aura::HandleAuraTransform(bool apply, bool Real)
             target->SetUInt32Value(UNIT_FIELD_MOUNTDISPLAYID, 16314);
 
         // polymorph case
-        if (Real && target->GetTypeId() == TYPEID_PLAYER && target->IsPolymorphed())
+        if (Real && GetSpellProto()->Mechanic == MECHANIC_POLYMORPH)
         {
-            // for players, start regeneration after 1s (in polymorph fast regeneration case)
-            // only if caster is Player (after patch 2.4.2)
-            if (GetCasterGuid().IsPlayer())
-                ((Player*)target)->setRegenTimer(1 * IN_MILLISECONDS);
-
-            // dismount polymorphed target (after patch 2.4.2)
             if (target->IsMounted())
-                target->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED, GetHolder());
+            {
+                if (target->GetTypeId() == TYPEID_PLAYER)
+                    target->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED, GetHolder());
+                else // dismount polymorphed creature target (after patch 2.4.2)
+                    target->Unmount();
+            }
         }
     }
     else                                                    // !apply
@@ -4218,9 +4254,15 @@ void Aura::HandleAuraModStun(bool apply, bool Real)
         if (GetSpellProto()->AuraInterruptFlags & AURA_INTERRUPT_FLAG_DAMAGE)
             target->getHostileRefManager().HandleSuppressed(apply);
 
-        // Summon the Naj'entus Spine GameObject on target if spell is Impaling Spine
-        if (GetId() == 39837)
-            target->CastSpell(nullptr, 39929, TRIGGERED_OLD_TRIGGERED);
+        switch (GetId())
+        {
+            case 32890: // Knockout - OHF
+                target->SetStandState(UNIT_STAND_STATE_DEAD);
+                break;
+            case 39837: // Summon the Naj'entus Spine GameObject on target if spell is Impaling Spine
+                target->CastSpell(nullptr, 39929, TRIGGERED_OLD_TRIGGERED);
+                break;
+        }
     }
     else
     {
@@ -4257,30 +4299,51 @@ void Aura::HandleAuraModStun(bool apply, bool Real)
         target->SetStunned(false);
 
         // Wyvern Sting
-        if (GetSpellProto()->SpellFamilyName == SPELLFAMILY_HUNTER && GetSpellProto()->SpellFamilyFlags & uint64(0x0000100000000000))
+        if (GetSpellProto()->SpellFamilyName == SPELLFAMILY_HUNTER)
         {
             Unit* caster = GetCaster();
-            if (!caster || caster->GetTypeId() != TYPEID_PLAYER)
-                return;
-
-            uint32 spell_id;
-            switch (GetId())
+            if (GetSpellProto()->SpellFamilyFlags & uint64(0x00010000))
             {
-                case 19386: spell_id = 24131; break;
-                case 24132: spell_id = 24134; break;
-                case 24133: spell_id = 24135; break;
-                case 27068: spell_id = 27069; break;
-                default:
-                    sLog.outError("Spell selection called for unexpected original spell %u, new spell for this spell family?", GetId());
+                if (!caster || caster->GetTypeId() != TYPEID_PLAYER)
                     return;
+
+                uint32 spell_id;
+                switch (GetId())
+                {
+                    case 19386: spell_id = 24131; break;
+                    case 24132: spell_id = 24134; break;
+                    case 24133: spell_id = 24135; break;
+                    case 27068: spell_id = 27069; break;
+                    default:
+                        sLog.outError("Spell selection called for unexpected original spell %u, new spell for this spell family?", GetId());
+                        return;
+                }
+
+                SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spell_id);
+
+                if (!spellInfo)
+                    return;
+
+                caster->CastSpell(target, spellInfo, TRIGGERED_OLD_TRIGGERED, nullptr, this);
             }
+            else    // Wyvern Sting for bosses
+            {
+                if (!caster)
+                    return;
 
-            SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spell_id);
-
-            if (!spellInfo)
-                return;
-
-            caster->CastSpell(target, spellInfo, TRIGGERED_OLD_TRIGGERED, nullptr, this);
+                switch (GetId())
+                {
+                    case 26180:     // Wyvern Sting (Princess Huhuran)
+                    {
+                        int32 natureDamage = (m_removeMode == AURA_REMOVE_BY_DISPEL) ? 3000 : 500;  // Deal 500 nature damage on spell expire but 3000 if dispelled
+                        GetCaster()->CastCustomSpell(target, 26233, &natureDamage, nullptr, nullptr, TRIGGERED_OLD_TRIGGERED);
+                        return;
+                    }
+                    default:
+                        sLog.outError("Spell selection called for unexpected original spell %u, new spell for this spell family?", GetId());
+                        return;
+                }
+            }
         }
     }
 }
@@ -4605,10 +4668,9 @@ void Aura::HandleModThreat(bool apply, bool Real)
     if (level_diff > 0)
         m_modifier.m_amount += multiplier * level_diff;
 
-    if (target->GetTypeId() == TYPEID_PLAYER)
-        for (int8 x = 0; x < MAX_SPELL_SCHOOL; ++x)
-            if (m_modifier.m_miscvalue & int32(1 << x))
-                ApplyPercentModFloatVar(target->m_threatModifier[x], float(m_modifier.m_amount), apply);
+    for (int8 x = 0; x < MAX_SPELL_SCHOOL; ++x)
+        if (m_modifier.m_miscvalue & int32(1 << x))
+            ApplyPercentModFloatVar(target->m_threatModifier[x], float(m_modifier.m_amount), apply);
 }
 
 void Aura::HandleAuraModTotalThreat(bool apply, bool Real)
@@ -4722,6 +4784,7 @@ void Aura::HandleAuraModDecreaseSpeed(bool apply, bool Real)
     }
 
     target->UpdateSpeed(MOVE_RUN, true);
+    target->UpdateSpeed(MOVE_RUN_BACK, true);
     target->UpdateSpeed(MOVE_SWIM, true);
     target->UpdateSpeed(MOVE_FLIGHT, true);
 }
@@ -5027,10 +5090,13 @@ void Aura::HandlePeriodicTriggerSpell(bool apply, bool /*Real*/)
                 return;
             case 35515:                                     // Salaadin's Tesla
                 if ((m_removeMode != AURA_REMOVE_BY_STACK) && (!target->HasAura(35515)))
-                    if (Creature* creature = (Creature*)target)
-                        creature->AI()->SendAIEvent(AI_EVENT_CUSTOM_A, creature, creature);
+                    if (UnitAI* ai = target->AI())
+                        ai->SendAIEvent(AI_EVENT_CUSTOM_A, target, target);
                 return;
             case 37640:                                     // Leotheras Whirlwind
+                if (UnitAI* ai = target->AI())
+                    ai->DoResetThreat();
+                return;
             case 39575:                                     // Charge Frenzy
                 if (Unit* pCaster = GetCaster())
                     pCaster->FixateTarget(nullptr);
@@ -5058,9 +5124,19 @@ void Aura::HandlePeriodicTriggerSpell(bool apply, bool /*Real*/)
             case 42177:                                     // Alert Drums
                 if (m_removeMode == AURA_REMOVE_BY_EXPIRE)
                 {
-                    if (Creature* creature = (Creature*)target)
-                        creature->AI()->SendAIEvent(AI_EVENT_CUSTOM_B, creature, creature);
+                    if (UnitAI* ai = target->AI())
+                        ai->SendAIEvent(AI_EVENT_CUSTOM_B, target, target);
                 }
+                return;
+            case 43648: // Electrical Storm - Akil'zon - send event
+                if (Unit* caster = GetCaster())
+                    if (UnitAI* ai = caster->AI())
+                        ai->SendAIEvent(AI_EVENT_CUSTOM_A, caster, caster);
+                break;
+            case 44251:                                     // Gravity Lapse Beam Visual Periodic
+                target->CastSpell(nullptr, 44232, TRIGGERED_OLD_TRIGGERED);
+                if (UnitAI* ai = target->AI())
+                    ai->SendAIEvent(AI_EVENT_CUSTOM_A, target, target, m_removeMode == AURA_REMOVE_BY_EXPIRE);
                 return;
             default:
                 break;
@@ -5134,6 +5210,13 @@ void Aura::HandleAuraPeriodicDummy(bool apply, bool Real)
                 {
                     if (apply)
                         target->AI()->SendAIEvent(AI_EVENT_CUSTOM_A, GetCaster(), target);
+                    break;
+                }
+                case 44328: // Energy Feedback - Vexallus
+                {
+                    if (!apply)
+                        if (Unit* caster = GetCaster())
+                            caster->AI()->SendAIEvent(AI_EVENT_CUSTOM_A, caster, caster);
                     break;
                 }
             }
@@ -5294,6 +5377,10 @@ void Aura::HandlePeriodicDamage(bool apply, bool Real)
     {
         switch (spellProto->Id)
         {
+            case 43364: // Tranquilizing Poison
+                if (m_removeMode == AURA_REMOVE_BY_EXPIRE)
+                    target->CastSpell(nullptr, 24004, TRIGGERED_OLD_TRIGGERED); // Sleep
+                break;
             case 30410: // Shadow Grasp cast Mind Exhaustion on removal
                 target->CastSpell(target, 44032, TRIGGERED_OLD_TRIGGERED);
                 break;
@@ -5337,6 +5424,18 @@ void Aura::HandlePeriodicLeech(bool apply, bool /*Real*/)
 void Aura::HandlePeriodicManaLeech(bool apply, bool /*Real*/)
 {
     m_isPeriodic = apply;
+
+    if (!apply)
+    {
+        switch (GetId())
+        {
+            case 24002: // Tranquilizing Poison
+            case 24003: // Tranquilizing Poison
+                if (m_removeMode == AURA_REMOVE_BY_EXPIRE)
+                    GetTarget()->CastSpell(nullptr, 24004, TRIGGERED_OLD_TRIGGERED); // Sleep
+                break;
+        }
+    }
 }
 
 void Aura::HandlePeriodicHealthFunnel(bool apply, bool /*Real*/)
@@ -5839,9 +5938,7 @@ void Aura::HandleAuraModIncreaseMaxHealth(bool apply, bool /*Real*/)
 void Aura::HandleAuraModIncreaseEnergy(bool apply, bool /*Real*/)
 {
     Unit* target = GetTarget();
-    Powers powerType = target->GetPowerType();
-    if (int32(powerType) != m_modifier.m_miscvalue)
-        return;
+    Powers powerType = Powers(m_modifier.m_miscvalue);
 
     UnitMods unitMod = UnitMods(UNIT_MOD_POWER_START + powerType);
 
@@ -5850,13 +5947,12 @@ void Aura::HandleAuraModIncreaseEnergy(bool apply, bool /*Real*/)
 
 void Aura::HandleAuraModIncreaseEnergyPercent(bool apply, bool /*Real*/)
 {
-    Powers powerType = GetTarget()->GetPowerType();
-    if (int32(powerType) != m_modifier.m_miscvalue)
-        return;
+    Unit* target = GetTarget();
+    Powers powerType = Powers(m_modifier.m_miscvalue);
 
     UnitMods unitMod = UnitMods(UNIT_MOD_POWER_START + powerType);
 
-    GetTarget()->HandleStatModifier(unitMod, TOTAL_PCT, float(m_modifier.m_amount), apply);
+    target->HandleStatModifier(unitMod, TOTAL_PCT, float(m_modifier.m_amount), apply);
 }
 
 void Aura::HandleAuraModIncreaseHealthPercent(bool apply, bool /*Real*/)
@@ -6649,7 +6745,7 @@ void Aura::HandleSpiritOfRedemption(bool apply, bool Real)
     }
     // die at aura end
     else
-        target->DealDamage(target, target->GetHealth(), nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, GetSpellProto(), false);
+        target->CastSpell(nullptr, 27965, TRIGGERED_OLD_TRIGGERED); // Suicide
 }
 
 void Aura::HandleSchoolAbsorb(bool apply, bool Real)
@@ -7339,8 +7435,17 @@ void Aura::PeriodicDummyTick()
         {
             switch (spell->Id)
             {
-                // Forsaken Skills
-                case 7054:
+                case 6946:                                  // Curse of the Bleakheart
+                case 41170:
+                {
+                    if (roll_chance_i(5))
+                    {
+                        int32 damageValue = target->CalculateSpellDamage(target, spell, EFFECT_INDEX_1);
+                        target->CastCustomSpell(nullptr, spell->Id == 6946 ? 6945 : 41356, nullptr, &damageValue, nullptr, TRIGGERED_OLD_TRIGGERED);
+                    }
+                    return;
+                }
+                case 7054:                                  // Forsaken Skills
                 {
                     // Possibly need cast one of them (but
                     // 7038 Forsaken Skill: Swords
@@ -7358,6 +7463,9 @@ void Aura::PeriodicDummyTick()
                     // 7050 Forsaken Skill: Frost
                     // 7051 Forsaken Skill: Holy
                     // 7053 Forsaken Skill: Shadow
+                    static uint32 forsakenSpells[] = { 7038,7039,7040,7041,7042,7043,7044,7045,7046,7047,7048,7049,7050,7051,7053 };
+                    if (urand(0, 99) == 0)
+                        target->CastSpell(nullptr, forsakenSpells[urand(0, 14)], TRIGGERED_OLD_TRIGGERED);
                     return;
                 }
                 case 7057:                                  // Haunting Spirits
