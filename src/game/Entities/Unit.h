@@ -1867,6 +1867,8 @@ class Unit : public WorldObject
         
         void SendHeartBeat();
 
+        void SendMoveRoot(bool state, bool broadcastOnly = false);
+
         bool IsMoving() const { return m_movementInfo.HasMovementFlag(movementFlagsMask); }
         bool IsMovingForward() const { return m_movementInfo.HasMovementFlag(MOVEFLAG_MASK_MOVING_FORWARD); }
         bool IsLevitating() const { return m_movementInfo.HasMovementFlag(MOVEFLAG_LEVITATING); }
@@ -1878,7 +1880,6 @@ class Unit : public WorldObject
         virtual void SetCanFly(bool /*enabled*/) {}
         virtual void SetFeatherFall(bool /*enabled*/) {}
         virtual void SetHover(bool /*enabled*/) {}
-        virtual void SetRoot(bool /*enabled*/) {}
         virtual void SetWaterWalk(bool /*enabled*/) {}
 
         void SetInFront(Unit const* target);
@@ -2347,7 +2348,7 @@ class Unit : public WorldObject
 
         // Panic: AI reaction script, NPC flees (e.g. at low health)
         inline bool IsInPanic() const { return hasUnitState(UNIT_STAT_PANIC); }
-        inline void SetInPanic(uint32 duration) { SetFleeing(true, ObjectGuid(), 0, duration); }
+        inline void SetInPanic(uint32 duration) { SetFleeing(true, GetObjectGuid(), 0, duration); }
 
         inline bool IsImmobilizedState() const { return hasUnitState(UNIT_STAT_ROOT | UNIT_STAT_STUNNED); }
         void SetImmobilizedState(bool apply, bool stun = false);
