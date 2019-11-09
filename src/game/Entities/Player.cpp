@@ -15444,6 +15444,10 @@ void Player::LoadCorpse()
         if (Corpse* corpse = GetCorpse())
         {
             ApplyModByteFlag(PLAYER_FIELD_BYTES, 0, PLAYER_FIELD_BYTE_RELEASE_TIMER, corpse && !sMapStore.LookupEntry(corpse->GetMapId())->Instanceable());
+
+            // [XFACTION]: Alter values update if detected crossfaction group interaction:
+            if (sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_GROUP) && GetGroup())
+                corpse->ForceValuesUpdateAtIndex(CORPSE_FIELD_BYTES_1);
         }
         else
         {
@@ -18038,7 +18042,7 @@ void Player::TaxiFlightResume(bool forceRenewMoveGen /*= false*/)
 bool Player::TaxiFlightInterrupt(bool cancel /*= true*/)
 {
     // Simply pauses if bool is not set (for example, storing the flight for one reason or another)
-    if (GetMotionMaster()->GetCurrentMovementGeneratorType() == FLIGHT_MOTION_TYPE)
+    if (GetMotionMaster()->GetCurrentMovementGeneratorType() == TAXI_MOTION_TYPE)
     {
         OnTaxiFlightEject(cancel);
         GetMotionMaster()->MovementExpired();
